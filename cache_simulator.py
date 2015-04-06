@@ -4,7 +4,7 @@ DEFAULT_VALUE = 0;
 
 class LookupResponse(object): #TODO: Make these some non-colliding hashes maybe?
 	found = "found"
-	not_found_overrode = "not found and overrode an existing entry"
+	not_found_overrode= "not found and overrode an existing entry"
 	not_found_no_overrode = "not found and did not override an existing entry"
 
 
@@ -19,7 +19,9 @@ class Memory(object):
 		if block_offset_size == 0:
 			return list(address)
 
+		address = address[0: (29 - block_offset_size)] # Word addressed
 		num_bits = block_offset_size;
+
 		last_num = 0;
 		for i in range(num_bits):
 			last_num += (1 << i)
@@ -28,7 +30,7 @@ class Memory(object):
 
 		ans = list();
 		while (num != last_num):
-			ans.append(bin(num)[2:]); # Get rid of the 0b
+			ans.append(address + bin(num)[2:] + "00"); # Get rid of the 0b
 			num += 1
 		return ans;
 
@@ -41,21 +43,14 @@ class Memory(object):
 		return self.mem[address]
 
 	def lookup(self, address, block_offset_size):
-		if block_offset_size == 0:
-			return list(self.lookup_one(address))
-		address = address[0: (29 - block_offset_size)] # Word addressed
-
-
-		snippets = self._enumerate_bits((block_offset_size))
-
-		addresses = [address + str(snippet) + "00" for snippet in snippets]
-
-		ans = [self.lookup_one(addr) for addr in addresses]
-
+		ans = [self.lookup_one(addr) for addr in self.generate_addresses(address, block_offset_size)]
 		return ans;
 	
 	def write_many(self, address, values, block_offset_size):
-		pairs = 
+		addresses = self.generate_addresses(address, block_offset_size);
+		pairs = [(addresses[i], values[i]) for i in range(len(values))];
+		self.write_pairs(pairs)
+
 	def write_pairs(self, address_value_pairs):
 		for p in address_value_pairs:
 			self.write(p[0], p[1])
@@ -100,9 +95,23 @@ class Cache(object):
 		self.conflict_misses = list();
 		self.capacity_misses = list();
 
+		self.hits = 0;
+
 	def is_full(self):
 		# TODO: Does this work?
 		return self.bytes_written >= self.cache_size;
+
+	def dump_info(self):
+
+		print("\n\n")
+		print("Total Hits: \t" + str(self.hits))
+		print("Total Misses: \t" + str(self.num_misses))
+		print("Hit Rate: \t" + str(self.hits / self.num_misses))
+		print("\n")
+		print("compulsory misses: \t" + str(len(self.compulsory_misses)))
+		print("conflict misses: \t" + str(len(self.conflict_misses)))
+		print("capacity misses: \t" + str(len(self.capacity_misses)))
+		print("\n")
 
 	def tokenize(self, address):
 		start = 0
@@ -124,33 +133,37 @@ class Cache(object):
 		end = start - 1
 		start = 0
 		tag = int(address[start:end], 2);
-
-		print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
+		
 		return (tag, set_addr, block_offset)
 
-	def write(self, address, full=False):
+	def write(self, address, val, full=False):
+		return self.lookup(address, True, val, full)
 
 	def get_set(self, set_addr):
 		if set_addr not in self.sets:
 			self.sets[set_addr] = CacheSet(self, set_addr)
 		return self.sets[set_addr]
 
-	def lookup(self, address, write=False, value=False, full=False):
+	def lookup(self, address, write=False, write_value=False, full=False):
 		tag, set_addr, block_offset = self.tokenize(address);
-		print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
 
-		(val, response, old_tag) = self.get_set(set_addr).lookup(tag, block_offset)
+		(val, response, old_tag) = self.get_set(set_addr).lookup(tag, block_offset, write, write_value)
+		# if full:
+		# 	print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
 
+		miss_type = "FOUND"
 		if response != LookupResponse.found:
-			
+			miss_type = "COMPULSORY"
 			self.num_misses += 1;
 			self.bytes_written += self.bytes_per_entry
 
 			if old_tag in self.overriden_conflict: 
 				self.conflict_misses.append(old_tag);
+				miss_type = "CONFLICT"
 
 			if old_tag in self.overriden_capacity: 
 				self.capacity_misses.append(old_tag);
+				miss_type = "CAPACITY"
 
 			if response == LookupResponse.not_found_overrode:
 				# We overrode something. Capacity miss or conflict miss
@@ -161,9 +174,11 @@ class Cache(object):
 					self.conflict_misses.append(old_tag)
 
 				self.bytes_written -= self.bytes_per_entry
+		else:
+			self.hits += 1
 
 		if full:
-			return (val, response, old_tag)
+			return (val, miss_type, response, old_tag)
 		else:
 			return val;
 
@@ -186,13 +201,13 @@ class CacheSet(object):
 	"""
 	Returns (Value, Lookup Response)
 	"""
-	def lookup(self, tag, block_offset):
+	def lookup(self, tag, block_offset, write=False, write_value=False):
 		ans = False;
 
 		for entry in self.entries:
 			entry.age += 1
 			if entry.tag == tag and entry.valid :
-				ans = entry.lookup(block_offset);
+				ans = entry.lookup(block_offset, write, write_value);
 				entry.age = 0;
 				return ans;
 
@@ -219,10 +234,13 @@ class CacheSet(object):
 		# vals for that entry. len should be blocks_per_entry
 		values = self.cache.memory.lookup(query, self.cache.block_offset_size) 
 
+		# Find the oldest and before we kill it forever, commit its writes to memory
 		to_change = self.oldest_entry();
+
 		old_tag = to_change.tag;
-		pairs = [to_change.]
-		self.cache.memory.write_many();
+		if to_change.written:
+			old_query = str(old_tag) + str(set_index) + str(block_offset) + "00"
+			self.cache.memory.write_many(old_query, to_change.blocks, self.cache.block_offset_size);
 
 		to_change.blocks = values;
 		to_change.tag = tag;
@@ -246,12 +264,18 @@ class CacheEntry(object):
 
 		self.blocks = [0 for i in range(cache.blocks_per_entry)] # Will contain values
 		self.valid = False;
+		self.written = False; 
 
 		self.age = 0; # If age is 0, it's just been used.
 
-	def lookup(self, block_offset):
+	def lookup(self, block_offset, write=False, write_val=False):
 		# if self.tag != self.block_offset:
 		# 	return (False, LookupResponse.not_found_overrode);
 		# 	# Now gotta pull the info?
-		return (self.blocks[block_offset], LookupResponse.found, False);
+		if write:
+			self.blocks[block_offset] = write_val
+			self.written = True
+
+		ans = (self.blocks[block_offset], LookupResponse.found, False);
+		return ans;
 
