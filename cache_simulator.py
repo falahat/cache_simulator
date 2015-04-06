@@ -11,7 +11,8 @@ class Memory(object):
 
 	DEFAULT_VALUE = 0;
 
-	def __init__(self):
+	def __init__(self, address_length=32):
+		self.address_length = address_length;
 		self.mem = map() # {32 bit address => value}
 
 	def _enumerate_bits(num_bits):
@@ -72,10 +73,10 @@ class Cache(object):
 
 		# Used to track misses. Keeps track of tags.
 		
-		# Keeps track of all entries overriden because of capacity misses
-		self.overriden_collision = set()
+		# Keeps track of all entries overriden because of conflict misses
+		self.overriden_conflict = set()
 
-		# Keeps track of all entries overriden because of collision misses
+		# Keeps track of all entries overriden because of capacity misses
 		self.overriden_capacity = set()
 
 		self.bytes_written = 0;
@@ -83,7 +84,7 @@ class Cache(object):
 		self.num_misses = 0;
 		self.compulsory_misses = list();
 		self.conflict_misses = list();
-		self.collision_misses = list();
+		self.capacity_misses = list();
 
 	def is_full(self):
 		# TODO: Does this work?
@@ -93,39 +94,50 @@ class Cache(object):
 		start = 0
 		end = self.address_length
 
-		address = [start:end]; # Byte offset
+		address = address[start : end] # Byte offset
 
 		start = (end - self.block_offset) + 1
 		end = end 
-		block_offset = [start:end];
+		block_offset = address[start:end];
 
 		end = start - 1
 		start = (end - self.set_index_size) + 1
-		set_addr = [start:end];
+		set_addr = address[start:end];
 
 		end = start - 1
 		start = 0
-		tag = [start:end];
+		tag = address[start:end];
 
 		print("Divided: " + tag + " | " + set_addr + " | " + block_offset + " | 00 ")
 
 
 		if set_addr not in self.sets:
 			self.sets[set_addr] = CacheSet(self, set_addr)
+
 		(val, response, old_tag) = self.sets[set_addr].lookup(tag, block_offset)
 
 		if response != LookupResponse.found:
+			
 			num_misses += 1;
+			self.bytes_written += self.bytes_per_entry
 
-			if old_tag in self.overriden: 
-				# TODO: Not sure how to distinguish between conflict and capacity
-				self.conflict
+			if old_tag in self.overriden_conflict: 
+				self.conflict_misses.append(old_tag);
+
+			if old_tag in self.overriden_capacity: 
+				self.capacity_misses.append(old_tag);
+
 			if response == LookupResponse.not_found_overrode:
-				# We might have a conflict miss later
-				self.overriden 
+				# We overrode something. Capacity miss or conflict miss
+				# It's capacity miss iff we were full
+				if self.is_full():
+					self.capacity_misses.append(old_tag)
+				else:
+					self.conflict_misses.append(old_tag)
 
+				self.bytes_written -= self.bytes_per_entry
 
-
+		return val;
 
 
 class CacheSet(object):
@@ -211,3 +223,12 @@ class CacheEntry(object):
 		else:
 			print("SOMETHING WRONG");
 			return False; # TODO: Better things later? Also will this ever even happen?
+
+
+def main():
+
+	# Address length
+	memory = Memory(32);
+
+	# size(bytes), N_way, bytes per entry, 
+	cache = Cache(4*1024, 1, 4, 
