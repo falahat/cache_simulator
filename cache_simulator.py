@@ -95,7 +95,7 @@ class Cache(object):
 		self.conflict_misses = list();
 		self.capacity_misses = list();
 
-		self.hits = 0;
+		self.num_hits = 0;
 
 	def is_full(self):
 		# TODO: Does this work?
@@ -104,9 +104,9 @@ class Cache(object):
 	def dump_info(self):
 
 		print("\n\n")
-		print("Total Hits: \t" + str(self.hits))
+		print("Total Hits: \t" + str(self.num_hits))
 		print("Total Misses: \t" + str(self.num_misses))
-		print("Hit Rate: \t" + str(self.hits / self.num_misses))
+		print("Hit Rate: \t" + str(self.num_hits / self.num_misses))
 		print("\n")
 		print("compulsory misses: \t" + str(len(self.compulsory_misses)))
 		print("conflict misses: \t" + str(len(self.conflict_misses)))
@@ -169,13 +169,14 @@ class Cache(object):
 				# We overrode something. Capacity miss or conflict miss
 				# It's capacity miss iff we were full
 				if self.is_full():
-					self.capacity_misses.append(old_tag)
+					self.overriden_capacity.add(old_tag)
 				else:
-					self.conflict_misses.append(old_tag)
+					self.overriden_conflict.add(old_tag)
 
 				self.bytes_written -= self.bytes_per_entry
-		else:
-			self.hits += 1
+		
+		if response == LookupResponse.found:
+			self.num_hits += 1
 
 		if full:
 			return (val, miss_type, response, old_tag)
