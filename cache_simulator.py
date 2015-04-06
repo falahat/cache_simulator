@@ -1,5 +1,6 @@
 import math;
 
+DEFAULT_VALUE = 0;
 
 class LookupResponse(object): #TODO: Make these some non-colliding hashes maybe?
 	found = "found"
@@ -9,17 +10,16 @@ class LookupResponse(object): #TODO: Make these some non-colliding hashes maybe?
 
 class Memory(object):
 
-	DEFAULT_VALUE = 0;
 
 	def __init__(self, address_length=32):
 		self.address_length = address_length;
-		self.mem = map() # {32 bit address => value}
+		self.mem = dict() # {32 bit address => value}
 
-	def _enumerate_bits(num_bits):
+	def generate_addresses(self, address, block_offset_size):
+		if block_offset_size == 0:
+			return list(address)
 
-		if num_bits == 0:
-			return [];
-
+		num_bits = block_offset_size;
 		last_num = 0;
 		for i in range(num_bits):
 			last_num += (1 << i)
@@ -28,24 +28,37 @@ class Memory(object):
 
 		ans = list();
 		while (num != last_num):
-			ans.append(bin(num));
+			ans.append(bin(num)[2:]); # Get rid of the 0b
 			num += 1
 		return ans;
 
 
-	def lookup_one(self, address, block_offset):
+	def lookup_one(self, address):
 
 		if address not in self.mem:
 			self.mem[address] = DEFAULT_VALUE;
 
 		return self.mem[address]
 
-	def lookup(self, address, block_offset):
-		address = address[0: (29 - block_offset)] # Word addressed
-		addresses = [address + str(snippet) + "00" for snippet in Memory._enumerate_bits(block_offset)]
-		ans = [lookup_one(addr) for addr in addresses]
+	def lookup(self, address, block_offset_size):
+		if block_offset_size == 0:
+			return list(self.lookup_one(address))
+		address = address[0: (29 - block_offset_size)] # Word addressed
+
+
+		snippets = self._enumerate_bits((block_offset_size))
+
+		addresses = [address + str(snippet) + "00" for snippet in snippets]
+
+		ans = [self.lookup_one(addr) for addr in addresses]
+
 		return ans;
 	
+	def write_many(self, address, values, block_offset_size):
+		pairs = 
+	def write_pairs(self, address_value_pairs):
+		for p in address_value_pairs:
+			self.write(p[0], p[1])
 
 	def write(self, address, val):
 		self.mem[address] = val;
@@ -61,15 +74,16 @@ class Cache(object):
 
 		# Calculating Sizes
 		self.num_entries = cache_size / bytes_per_entry # Entries total
-		self.num_sets = num_entries / N_way
+		self.num_sets = self.num_entries / N_way
 		self.num_ways = self.num_entries / self.num_sets
 		self.entries_per_set = self.num_entries / self.num_sets;
+		self.blocks_per_entry = self.bytes_per_entry / 4;
 
 		# Address segment sizes
-		self.set_index_size = math.log2(self.entries_per_set)
-		self.block_offset = math.log2(self.blocks_per_entry)
+		self.set_index_size = int.bit_length(self.entries_per_set)
+		self.block_offset_size = int.bit_length(self.blocks_per_entry)
 
-		self.sets = map(); # {Set Index => Set Objects}
+		self.sets = dict(); # {Set Index => Set Objects}
 
 		# Used to track misses. Keeps track of tags.
 		
@@ -90,35 +104,46 @@ class Cache(object):
 		# TODO: Does this work?
 		return self.bytes_written >= self.cache_size;
 
-	def lookup(self, address):
+	def tokenize(self, address):
 		start = 0
-		end = self.address_length
+		end = self.memory.address_length
+
+		address = bin(address);
+		address = address[2:] # To chop off the 0b....
 
 		address = address[start : end] # Byte offset
 
-		start = (end - self.block_offset) + 1
+		start = (end - self.block_offset_size) + 1
 		end = end 
-		block_offset = address[start:end];
+		block_offset = int("0" + address[start:end], 2);
 
 		end = start - 1
 		start = (end - self.set_index_size) + 1
-		set_addr = address[start:end];
+		set_addr = int("0" + address[start:end], 2);
 
 		end = start - 1
 		start = 0
-		tag = address[start:end];
+		tag = int(address[start:end], 2);
 
-		print("Divided: " + tag + " | " + set_addr + " | " + block_offset + " | 00 ")
+		print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
+		return (tag, set_addr, block_offset)
 
+	def write(self, address, full=False):
 
+	def get_set(self, set_addr):
 		if set_addr not in self.sets:
 			self.sets[set_addr] = CacheSet(self, set_addr)
+		return self.sets[set_addr]
 
-		(val, response, old_tag) = self.sets[set_addr].lookup(tag, block_offset)
+	def lookup(self, address, write=False, value=False, full=False):
+		tag, set_addr, block_offset = self.tokenize(address);
+		print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
+
+		(val, response, old_tag) = self.get_set(set_addr).lookup(tag, block_offset)
 
 		if response != LookupResponse.found:
 			
-			num_misses += 1;
+			self.num_misses += 1;
 			self.bytes_written += self.bytes_per_entry
 
 			if old_tag in self.overriden_conflict: 
@@ -137,12 +162,17 @@ class Cache(object):
 
 				self.bytes_written -= self.bytes_per_entry
 
-		return val;
+		if full:
+			return (val, response, old_tag)
+		else:
+			return val;
 
 
 class CacheSet(object):
 
 	def __init__(self, cache, set_index):
+
+		self.cache = cache
 		self.index_size = cache.set_index_size;
 		self.num_ways = cache.num_ways;
 		self.index = set_index;
@@ -150,7 +180,7 @@ class CacheSet(object):
 
 		# Contains CacheEntry objects. len = num_ways
 		# Initially all invalid
-		self.entries = [CacheEntry(0) for i in range(self.num_ways)] 
+		self.entries = [CacheEntry(0, self.cache) for i in range(self.num_ways)] 
 
 
 	"""
@@ -163,19 +193,21 @@ class CacheSet(object):
 			entry.age += 1
 			if entry.tag == tag and entry.valid :
 				ans = entry.lookup(block_offset);
+				entry.age = 0;
+				return ans;
 
 		if not ans:
 			# We have not found it, time to replace the least recently used one
 			ans = self.ask_memory(self.index, tag, block_offset)
+			return ans;
 
 		# Make the entry young again
 		# TODO: What if Null? Should be impossible...
-		ans[0].age = 0;
-		return ans;
+		
 
 
 	def oldest_entry(self):
-		ans = (0, False);
+		ans = (self.entries[0].age, self.entries[0]);
 		for entry in self.entries:
 			if entry.age <= ans[0]:
 				ans = (entry.age, entry)
@@ -185,10 +217,13 @@ class CacheSet(object):
 		query = str(tag) + str(set_index) + str(block_offset) + "00"
 
 		# vals for that entry. len should be blocks_per_entry
-		values = self.cache.memory.lookup(query, block_offset) 
+		values = self.cache.memory.lookup(query, self.cache.block_offset_size) 
 
 		to_change = self.oldest_entry();
 		old_tag = to_change.tag;
+		pairs = [to_change.]
+		self.cache.memory.write_many();
+
 		to_change.blocks = values;
 		to_change.tag = tag;
 		to_change.age = 0;
@@ -208,6 +243,7 @@ class CacheEntry(object):
 	def __init__(self, tag, cache):
 		self.cache = cache;
 		self.tag = tag;
+
 		self.blocks = [0 for i in range(cache.blocks_per_entry)] # Will contain values
 		self.valid = False;
 
@@ -217,10 +253,5 @@ class CacheEntry(object):
 		# if self.tag != self.block_offset:
 		# 	return (False, LookupResponse.not_found_overrode);
 		# 	# Now gotta pull the info?
-
-		if self.blocks[block_offset]:
-			return (self.blocks[block_offset], LookupResponse.found, False);
-		else:
-			print("SOMETHING WRONG");
-			return False; # TODO: Better things later? Also will this ever even happen?
+		return (self.blocks[block_offset], LookupResponse.found, False);
 
