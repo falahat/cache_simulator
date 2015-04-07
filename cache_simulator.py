@@ -104,9 +104,12 @@ class Cache(object):
 	def dump_info(self):
 
 		print("\n\n")
+		print("Sets: \t" + str(self.num_sets))
+		print("Block Offset: \t" + str(self.block_offset_size))
+		print("\n\n")
 		print("Total Hits: \t" + str(self.num_hits))
 		print("Total Misses: \t" + str(self.num_misses))
-		print("Hit Rate: \t" + str(self.num_hits / self.num_misses))
+		print("Hit Rate: \t" + str((self.num_hits + self.num_misses) / self.num_misses))
 		print("\n")
 		print("compulsory misses: \t" + str(len(self.compulsory_misses)))
 		print("conflict misses: \t" + str(len(self.conflict_misses)))
@@ -115,24 +118,20 @@ class Cache(object):
 
 	def tokenize(self, address):
 		start = 0
-		end = self.memory.address_length
-
 		address = bin(address);
 		address = address[2:] # To chop off the 0b....
 
-		address = address[start : end] # Byte offset
+		address = address[:-2] # Byte offset
 
-		start = (end - self.block_offset_size) + 1
-		end = end 
-		block_offset = int("0" + address[start:end], 2);
+		start = self.block_offset_size
+		block_offset = int("0" + address[-start:], 2);
+		address = address[:-start]
 
-		end = start - 1
-		start = (end - self.set_index_size) + 1
-		set_addr = int("0" + address[start:end], 2);
+		start = self.set_index_size
+		set_addr = int("0" + address[-start:], 2);
+		address = address[:-start]
 
-		end = start - 1
-		start = 0
-		tag = int(address[start:end], 2);
+		tag = int("0" + address[:], 2);
 		
 		return (tag, set_addr, block_offset)
 
@@ -148,8 +147,8 @@ class Cache(object):
 		tag, set_addr, block_offset = self.tokenize(address);
 
 		(val, response, old_tag) = self.get_set(set_addr).lookup(tag, block_offset, write, write_value)
-		# if full:
-		# 	print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
+		if full:
+			print("Divided: " + str(tag) + " | " + str(set_addr) + " | " + str(block_offset) + " | 00 ")
 
 		miss_type = "FOUND"
 		if response != LookupResponse.found:
@@ -157,28 +156,28 @@ class Cache(object):
 			self.num_misses += 1;
 			self.bytes_written += self.bytes_per_entry
 
-			if old_tag in self.overriden_conflict: 
-				self.conflict_misses.append(old_tag);
+			if tag in self.overriden_conflict: 
+				self.conflict_misses.append(tag);
 				miss_type = "CONFLICT"
 
-			if old_tag in self.overriden_capacity: 
-				self.capacity_misses.append(old_tag);
+			if tag in self.overriden_capacity: 
+				self.capacity_misses.append(tag);
 				miss_type = "CAPACITY"
 
 			if response == LookupResponse.not_found_overrode:
 				# We overrode something. Capacity miss or conflict miss
+				self.bytes_written -= self.bytes_per_entry
 				# It's capacity miss iff we were full
 				if self.is_full():
 					self.overriden_capacity.add(old_tag)
 				else:
-					self.overriden_conflict.add(old_tag)
-
-				self.bytes_written -= self.bytes_per_entry
+					self.overriden_conflict.add(old_tag)		
 		
 		if response == LookupResponse.found:
 			self.num_hits += 1
 
 		if full:
+			print("Bytes written so far: " + str(self.bytes_written))
 			return (val, miss_type, response, old_tag)
 		else:
 			return val;
