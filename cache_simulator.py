@@ -109,7 +109,7 @@ class Cache(object):
 		print("\n\n")
 		print("Total Hits: \t" + str(self.num_hits))
 		print("Total Misses: \t" + str(self.num_misses))
-		print("Hit Rate: \t" + str((self.num_misses) / (1.0 * self.num_hits + self.num_misses) )
+		print("Hit Rate: \t" + str((self.num_misses) / (1.0 * self.num_hits + self.num_misses) ))
 		print("\n")
 		print("compulsory misses: \t" + str(len(self.compulsory_misses)))
 		print("conflict misses: \t" + str(len(self.conflict_misses)))
@@ -159,7 +159,7 @@ class Cache(object):
 			if tag in self.overriden_conflict: 
 				self.conflict_misses.append(tag);
 				miss_type = "CONFLICT"
-			else if tag in self.overriden_capacity: 
+			elif tag in self.overriden_capacity: 
 				self.capacity_misses.append(tag);
 				miss_type = "CAPACITY"
 			else:
