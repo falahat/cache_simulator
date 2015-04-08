@@ -80,7 +80,6 @@ class Cache(object):
 
 		self.sets = dict(); # {Set Index => Set Objects}
 
-		# Used to track misses. Keeps track of tags.
 		
 		# Keeps track of all entries overriden because of conflict misses
 		self.overriden_conflict = set()
@@ -103,7 +102,6 @@ class Cache(object):
 
 	def dump_info(self):
 
-		print("\n\n")
 		print("Sets: \t" + str(self.num_sets))
 		print("Block Offset: \t" + str(self.block_offset_size))
 		print("\n\n")
@@ -116,6 +114,10 @@ class Cache(object):
 		print("capacity misses: \t" + str(len(self.capacity_misses)))
 		print("\n")
 
+	"""
+	Just breaks an address into its different components (tag, set index, block offset)
+	The return type of each of these values is int
+	"""
 	def tokenize(self, address):
 		start = 0
 		address = bin(address);
@@ -143,6 +145,27 @@ class Cache(object):
 			self.sets[set_addr] = CacheSet(self, set_addr)
 		return self.sets[set_addr]
 
+	"""
+	It finds the correct set to send the lookup request to.
+	Most of the actual cache lookup logic is handled in the set.
+	This method mainly keeps track of hits and misses, and keeps
+	track of the different types of misses.
+
+	If a value was not found (and thus had to be fetched from memory,)
+	this method will check if another value had to be evicted from the cache.
+		If yes: It will try to find out why that value had to be evicted.
+			If the cache wasn't full, then it must have just been a set collision
+			If the cache was full, it must have been a capacity issue.
+
+	After a miss, this method will also try to figure out the cause for that miss.
+	If we had never requested that address before, it's obviously a compulsory miss.
+
+	If we had requested that address before, but we don't have it now, then we must
+	have had to evict that value at some point. This is either a capacity or conflict miss.
+
+	If we had evicted that value because of a set collision, it's a conflict miss.
+	If we had evicted that value because of lack of space in the cache, it's a capacity miss.
+	"""
 	def lookup(self, address, write=False, write_value=False, full=False):
 		tag, set_addr, block_offset = self.tokenize(address);
 
@@ -200,7 +223,7 @@ class CacheSet(object):
 
 
 	"""
-	Returns (Value, Lookup Response)
+	Returns (Value, Lookup Response, address of value that was evicted to make room for this)
 	"""
 	def lookup(self, tag, block_offset, write=False, write_value=False):
 		ans = False;
