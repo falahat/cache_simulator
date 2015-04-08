@@ -76,7 +76,7 @@ class Cache(object):
 
 		# Address segment sizes
 		self.set_index_size = int.bit_length(self.entries_per_set)
-		self.block_offset_size = int.bit_length(self.blocks_per_entry)
+		self.block_offset_size = int.bit_length(self.blocks_per_entry - 1)
 
 		self.sets = dict(); # {Set Index => Set Objects}
 
@@ -109,7 +109,7 @@ class Cache(object):
 		print("\n\n")
 		print("Total Hits: \t" + str(self.num_hits))
 		print("Total Misses: \t" + str(self.num_misses))
-		print("Hit Rate: \t" + str((self.num_misses) / (1.0 * self.num_hits + self.num_misses) ))
+		print("Hit Rate: \t" + str((self.num_hits) / (1.0 * self.num_hits + self.num_misses) ))
 		print("\n")
 		print("compulsory misses: \t" + str(len(self.compulsory_misses)))
 		print("conflict misses: \t" + str(len(self.conflict_misses)))
