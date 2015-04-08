@@ -75,7 +75,7 @@ class Cache(object):
 		self.blocks_per_entry = self.bytes_per_entry / 4;
 
 		# Address segment sizes
-		self.set_index_size = int.bit_length(self.entries_per_set)
+		self.set_index_size = int.bit_length(self.num_sets - 1)
 		self.block_offset_size = int.bit_length(self.blocks_per_entry - 1)
 
 		self.sets = dict(); # {Set Index => Set Objects}
