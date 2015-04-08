@@ -2,7 +2,8 @@
 It's honestly incredibly buggy
 
 ## Features & Warnings
-It assumed that all requests are byte addressed, but it does everything word addressed. The first thing that it does to a requested address is chop off the rightmost two bits. So requesting 0b0...001 or 0b0...010 end up being the same request.
+Evicts based on LRU. It's also a write-back cache (though that doesn't make a performace difference here.)
+It assumes that all requests are byte addressed, but it does everything word addressed. The first thing that it does to a requested address is chop off the rightmost two bits. So requesting 0b0...001 or 0b0...010 end up being the same request.
 
 ## Definition of Different Misses
 This cache simulator keeps track of all entries that we have ever evicted and keeps track of why we evicted them. If we kicked out an entry but the cache was not full, then we know that this entry was kicked out only because of a set conflict. If we kicked an entry out and the cache was full at the time, we say that this entry was kicked out because there was just no room in the cache.
